@@ -1,0 +1,104 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <unordered_map>
+#include <thread>
+#include <mutex>
+#include <chrono>
+#include <random>
+using namespace std;
+// Структура для описания магазина
+struct Shop {
+    string city;
+    string street;
+    int houseNumber;
+    int uniqueId;
+};
+
+// Генерация случайных данных о магазинах
+void generateShops(vector<Shop>& shops, int numShops) {
+    random_device rd;
+    mt19937 generator(rd());
+    uniform_int_distribution<int> cityDist(1, 5); // 5 разных населенных пунктов
+    uniform_int_distribution<int> streetDist(1, 10); // 10 разных улиц
+    uniform_int_distribution<int> houseDist(1, 100); // Номера домов от 1 до 100
+
+    for (int i = 0; i < numShops; ++i) {
+        shops.push_back({
+            "City" + to_string(cityDist(generator)),
+            "Street" + to_string(streetDist(generator)),
+            houseDist(generator),i
+        });
+    }
+}
+
+// Однопоточная обработка данных
+void singleThreadProcessing(const vector<Shop>& shops) {
+    unordered_map<string, vector<string>> streetCityMap;
+
+    for (const auto& shop : shops) {
+        streetCityMap[shop.street].push_back(shop.city);
+    }
+
+    for (const auto& pair : streetCityMap) {
+        const string& street = pair.first;
+        const vector<string>& cities = pair.second;
+    }
+}
+
+// Многопоточная обработка данных
+void processShopsMultithreaded(const vector<Shop>& shops, int numThreads) {
+    unordered_map<string, vector<string>> streetCityMap;
+    mutex mtx;
+    int chunkSize = shops.size() / numThreads;
+
+    auto processChunk = [&](int start, int end) {
+        unordered_map<string, vector<string>> localMap;
+        for (int i = start; i < end; ++i) {
+            localMap[shops[i].street].push_back(shops[i].city);
+        }
+
+        lock_guard<mutex> lock(mtx);
+        for (const auto& [street, cities] : localMap) {
+            streetCityMap[street].insert(streetCityMap[street].end(), cities.begin(), cities.end());
+        }
+    };
+
+    vector<thread> threads;
+    for (int i = 0; i < numThreads; ++i) {
+        int start = i * chunkSize;
+        int end = (i == numThreads - 1) ? shops.size() : start + chunkSize;
+        threads.emplace_back(processChunk, start, end);
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+}
+
+int main() {
+    int numShops; // Количество магазинов
+    cout << "Enter the number of shops: ";
+    cin >> numShops; // Ввод количества магазинов
+
+    int numThreads = 4;   // Количество параллельных потоков
+    vector<Shop> shops;
+    generateShops(shops, numShops);
+
+    // Однопоточная обработка
+    auto start = chrono::high_resolution_clock::now();
+    singleThreadProcessing(shops);
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double> duration = end - start;
+    cout << "Single-threaded processing time: " << duration.count() << " seconds\n";
+
+    // Многопоточная обработка
+    start = chrono::high_resolution_clock::now();
+    processShopsMultithreaded(shops, numThreads);
+    end = chrono::high_resolution_clock::now();
+    duration = end - start;
+    cout << "Multi-threaded processing time: " << duration.count() << " seconds\n";
+
+    return 0;
+}
